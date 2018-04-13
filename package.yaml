@@ -21,6 +21,7 @@ description:         Please see the README on Github at <https://github.com/pars
 dependencies:
 - base >= 4.7 && < 5
 - persistent
+- template-haskell
 
 library:
   source-dirs: src
