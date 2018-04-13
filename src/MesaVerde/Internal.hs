@@ -33,7 +33,7 @@ example = do
 
     table_ "Dog" $ do
         "owner"  userRef
-        "name"   ''String
+        "name"   ''String                 sql { sqlType = "lmao" }
 
         theUsual
 
