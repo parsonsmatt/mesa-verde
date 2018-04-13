@@ -9,3 +9,14 @@ newtype EntityDefine i a = EntityDefine (IO a)
 
 newtype SchemaDefine a = SchemaDefine (IO a)
     deriving (Functor, Applicative, Monad)
+
+example :: SchemaDefine a
+example = do
+    model "User" $ do
+        "name" @String
+        "age" @Int
+        derive [''Eq, ''Ord, ''Show]
+
+    model "Dog" $ do
+        "name" @String
+        "owner" @UserId
