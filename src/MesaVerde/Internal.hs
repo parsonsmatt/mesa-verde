@@ -8,6 +8,7 @@
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecursiveDo                #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -16,6 +17,7 @@
 
 module MesaVerde.Internal where
 
+import           Control.Monad.Fix
 import           Data.String            (IsString (..))
 import           Data.Typeable
 import           Database.Persist.Types (EntityDef (..))
@@ -25,20 +27,20 @@ import           Language.Haskell.TH    (Name)
 
 -- the desired syntax, blessed may it be
 example :: Schema
-example = do
-    userRef <- table "User" $ do
-        "name"   ''String
-        "age"    ''Int
-
-        derive @[Eq, Ord, Show]
-
-    let theUsual = derive @[Eq, Ord, Show]
-
+example = mdo
     table_ "Dog" $ do
         owner <- fieldRef "owner"  userRef
         field            "name"   ''String      sql { sqlType = "lmao" }
 
         foreignKey userRef "fk_dog_user" [owner]
+
+        derive @[Eq, Ord, Show]
+
+    let theUsual = derive @[Eq, Ord, Show]
+
+    userRef <- table "User" $ do
+        "name"   ''String
+        "age"    ''Int
         theUsual
 
     table_ "Friend" $ do
@@ -46,12 +48,12 @@ example = do
         name <- fieldRef "name"   ''String sql { colName = "friend_name" }
         ugh  <- fieldRef "ugh"    ''Int    sql { colName = "x", sqlType = "y" }
 
-        unique "uniq_by_name" [name]
+        unique "FriendName" name
         primary ugh
 
 -- the end result of running the schema definitions will be a @['EntityDef']@.
 newtype SchemaDefine a = SchemaDefine (IO a)
-    deriving (Functor, Applicative, Monad)
+    deriving (Functor, Applicative, Monad, MonadFix)
 
 type Schema = SchemaDefine ()
 
@@ -106,9 +108,6 @@ instance DeriveImpl '[] where
 instance (DeriveImpl xs, Typeable x) => DeriveImpl (x ': xs) where
     deriveImpl _ = show (typeRep (Proxy @x)) : deriveImpl (Proxy @xs)
 
-unique :: String -> [FieldRef s] -> EntityDefine s x
-unique = undefined
-
 primary :: FieldRef s -> EntityDefine s x
 primary = compositePrimary . pure
 
@@ -127,12 +126,37 @@ instance WithFieldRef (EntityDefine s (FieldRef s)) where
     fieldRef :: NameOrEntityRef x => String -> x -> EntityDefine s (FieldRef s)
     fieldRef = undefined
 
-instance WithFieldRef (FieldSpec -> EntityDefine s (FieldRef s)) where
+instance (r ~ FieldRef s) => WithFieldRef (FieldSpec -> EntityDefine s r) where
     fieldRef :: NameOrEntityRef x => String -> x -> FieldSpec -> EntityDefine s (FieldRef s)
     fieldRef = undefined
 
 instance {-# OVERLAPPABLE #-} (TypeError (Text "you did it wrong")) => WithFieldRef a where
     fieldRef = undefined
+
+uniqueImpl
+    :: String
+    -> [FieldRef s]
+    -> Maybe FieldSpec
+    -> EntityDefine s ()
+uniqueImpl = undefined
+
+class Unique ret where
+    unique :: String -> ret
+
+instance (a ~ ()) => Unique (FieldRef s -> EntityDefine s a) where
+    unique str ref = uniqueImpl str [ref] Nothing
+
+instance (a ~ ()) => Unique ([FieldRef s] -> EntityDefine s a) where
+    unique str refs = uniqueImpl str refs Nothing
+
+instance (a ~ ()) => Unique (FieldRef s -> FieldSpec -> EntityDefine s a) where
+    unique str ref spec = uniqueImpl str [ref] (Just spec)
+
+instance (a ~ ()) => Unique ([FieldRef s] -> FieldSpec -> EntityDefine s a) where
+    unique str refs spec = uniqueImpl str refs (Just spec)
+
+instance {-# OVERLAPPABLE #-} (TypeError (Text "you did it wrong, in a Unique")) => Unique a where
+    unique = undefined
 
 
 class Field ret where
