@@ -39,17 +39,36 @@ example = mdo
     let theUsual = derive @[Eq, Ord, Show]
 
     userRef <- table "User" $ do
-        "name"   ''String
-        "age"    ''Int
+        field "name"   @String
+        field "age"    @Int      ! "do people use attribute?" ! "i hope so"
         theUsual
 
     table_ "Friend" $ do
-        field           "foobar" ''Int    sql { sqlType = "why" }
-        name <- fieldRef "name"   ''String sql { colName = "friend_name" }
-        ugh  <- fieldRef "ugh"    ''Int    sql { colName = "x", sqlType = "y" }
+        field           "foobar" @Int    sql { sqlType = "why" }
+        name <- fieldRef "name"  @String sql { colName = "friend_name" }
+        ugh  <- fieldRef "ugh"   @Int    sql { colName = "x", sqlType = "y" }
+
+        wtf "lmao" @Int
 
         unique "FriendName" name
         primary ugh
+
+    -- copped from persistent-test/src/Recursive.hs:
+    subtype <- table "SubType" $ do
+        "object" object
+        derive @[Show, Eq]
+
+    object <- table "Object" $ do
+        "sub" subtype
+        derive @[Show, Eq]
+
+    table_ "MaybeField" $ do
+        field "some_maybe" @(Maybe Int)
+
+    done
+
+done :: Applicative f => f ()
+done = pure ()
 
 -- the end result of running the schema definitions will be a @['EntityDef']@.
 newtype SchemaDefine a = SchemaDefine (IO a)
@@ -93,7 +112,10 @@ data EntityRef
 
 data FieldRef s
 
--- god, this is really awful, isn't it?
+--------------------------------------------------------------------------------
+-- deriving
+--------------------------------------------------------------------------------
+
 derive :: forall (xs :: [* -> Constraint]) s. DeriveImpl xs => EntityDefine s ()
 derive = undefined
   where
@@ -108,6 +130,10 @@ instance DeriveImpl '[] where
 instance (DeriveImpl xs, Typeable x) => DeriveImpl (x ': xs) where
     deriveImpl _ = show (typeRep (Proxy @x)) : deriveImpl (Proxy @xs)
 
+--------------------------------------------------------------------------------
+-- keys and references
+--------------------------------------------------------------------------------
+
 primary :: FieldRef s -> EntityDefine s x
 primary = compositePrimary . pure
 
@@ -117,21 +143,17 @@ compositePrimary = undefined
 foreignKey :: EntityRef -> String -> [FieldRef s] -> EntityDefine s ()
 foreignKey = undefined
 
--- digusting classes
+attribute :: EntityDefine s a -> String -> EntityDefine s a
+attribute = undefined
 
-class WithFieldRef ret where
-    fieldRef :: NameOrEntityRef x => String -> x -> ret
+(!) :: EntityDefine s a -> String -> EntityDefine s a
+(!) = attribute
 
-instance WithFieldRef (EntityDefine s (FieldRef s)) where
-    fieldRef :: NameOrEntityRef x => String -> x -> EntityDefine s (FieldRef s)
-    fieldRef = undefined
+infixl 5 !
 
-instance (r ~ FieldRef s) => WithFieldRef (FieldSpec -> EntityDefine s r) where
-    fieldRef :: NameOrEntityRef x => String -> x -> FieldSpec -> EntityDefine s (FieldRef s)
-    fieldRef = undefined
-
-instance {-# OVERLAPPABLE #-} (TypeError (Text "you did it wrong")) => WithFieldRef a where
-    fieldRef = undefined
+--------------------------------------------------------------------------------
+-- uniquenes
+--------------------------------------------------------------------------------
 
 uniqueImpl
     :: String
@@ -158,31 +180,50 @@ instance (a ~ ()) => Unique ([FieldRef s] -> FieldSpec -> EntityDefine s a) wher
 instance {-# OVERLAPPABLE #-} (TypeError (Text "you did it wrong, in a Unique")) => Unique a where
     unique = undefined
 
+--------------------------------------------------------------------------------
+-- fields
+--------------------------------------------------------------------------------
+
+fieldImpl
+    :: forall fieldType x s
+    . (TypeOrEntityRef x)
+    => String
+    -> x
+    -> Maybe FieldSpec
+    -> EntityDefine s ()
+fieldImpl name x mfield = undefined
 
 class Field ret where
-    field :: NameOrEntityRef x => String -> x -> ret
+    field :: String -> ret
 
 instance (() ~ a) => Field (EntityDefine s a) where
-    field = undefined
+    field :: String -> forall m. EntityDefine s a
+    field s = fieldImpl s (typ @m) Nothing
 
-instance (() ~ a) => Field (FieldSpec -> EntityDefine s a) where
-    field = undefined
+instance (() ~ a, TypeOrEntityRef s) => Field (s -> FieldSpec -> EntityDefine s a) where
+    field s x r = fieldImpl s x (Just r)
 
 instance {-# OVERLAPPABLE #-} (TypeError (Text "you did it wrong, in a field")) => Field a where
     field = undefined
 
+
+class WithFieldRef ret where
+    fieldRef :: TypeOrEntityRef x => String -> x -> ret
+
+instance WithFieldRef (EntityDefine s (FieldRef s)) where
+    fieldRef :: TypeOrEntityRef x => String -> x -> EntityDefine s (FieldRef s)
+    fieldRef = undefined
+
+instance (r ~ FieldRef s) => WithFieldRef (FieldSpec -> EntityDefine s r) where
+    fieldRef :: TypeOrEntityRef x => String -> x -> FieldSpec -> EntityDefine s (FieldRef s)
+    fieldRef = undefined
+
+instance {-# OVERLAPPABLE #-} (TypeError (Text "you did it wrong")) => WithFieldRef a where
+    fieldRef = undefined
+
 --------------------------------------------------------------------------------
 -- nasty syntax hacks
 --------------------------------------------------------------------------------
-
-instance (() ~ a) => IsString (Name -> EntityDefine s a) where
-    fromString = fieldWithType
-
-fieldWithType :: String -> Name -> EntityDefine s ()
-fieldWithType = undefined
-
-instance (() ~ a) => IsString (EntityRef -> EntityDefine s a) where
-    fromString = fieldWithRef
 
 fieldWithRef :: String -> EntityRef -> EntityDefine s ()
 fieldWithRef = undefined
@@ -195,14 +236,20 @@ instance (() ~ a) => IsString (Name -> FieldSpec -> EntityDefine s a) where
     fromString = undefined
 
 -- gross hack so i can lighten the syntax load
-class NameOrEntityRef x where
-    disambiguate :: x -> Either Name EntityRef
+class TypeOrEntityRef x where
+    disambiguate :: x -> Either Typ EntityRef
 
-instance NameOrEntityRef Name where
+instance TypeOrEntityRef Typ where
     disambiguate = Left
 
-instance NameOrEntityRef EntityRef where
+instance TypeOrEntityRef EntityRef where
     disambiguate = Right
 
-instance {-# OVERLAPPABLE #-} (TypeError (Text "No.")) => NameOrEntityRef a where
+instance {-# OVERLAPPABLE #-} (TypeError (Text "No.")) => TypeOrEntityRef a where
     disambiguate = undefined
+
+data Typ where
+    Typ :: Typeable t => Proxy t -> Typ
+
+typ :: forall t. Typeable t => Typ
+typ = Typ (Proxy @t)
