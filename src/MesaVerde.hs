@@ -1,1 +1,5 @@
-module MesaVerde where
+module MesaVerde
+    ( module MesaVerde.Internal
+    ) where
+
+import MesaVerde.Internal ()
