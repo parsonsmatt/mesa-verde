@@ -8,13 +8,16 @@
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 module MesaVerde.Internal where
 
 import           Data.String            (IsString (..))
+import           Data.Typeable
 import           Database.Persist.Types (EntityDef (..))
 import           GHC.Exts               (Constraint)
 import           GHC.TypeLits
@@ -88,8 +91,19 @@ data EntityRef
 data FieldRef
 
 -- god, this is really awful, isn't it?
-derive :: forall (xs :: [* -> Constraint]) a. EntityDefine a
+derive :: forall (xs :: [* -> Constraint]). DeriveImpl xs => EntityDefine ()
 derive = undefined
+  where
+    strs = deriveImpl (Proxy @xs)
+
+class DeriveImpl (xs :: [* -> Constraint]) where
+    deriveImpl :: proxy xs -> [String]
+
+instance DeriveImpl '[] where
+    deriveImpl _ = []
+
+instance (DeriveImpl xs, Typeable x) => DeriveImpl (x ': xs) where
+    deriveImpl _ = show (typeRep (Proxy @x)) : deriveImpl (Proxy @xs)
 
 unique :: String -> [FieldRef] -> EntityDefine x
 unique = undefined
