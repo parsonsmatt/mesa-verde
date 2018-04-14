@@ -35,9 +35,10 @@ example = do
     let theUsual = derive @[Eq, Ord, Show]
 
     table_ "Dog" $ do
-        "owner"  userRef
-        "name"   ''String                 sql { sqlType = "lmao" }
+        owner <- fieldRef "owner"  userRef
+        field            "name"   ''String      sql { sqlType = "lmao" }
 
+        foreignKey userRef "fk_dog_user" [owner]
         theUsual
 
     table_ "Friend" $ do
@@ -55,19 +56,19 @@ newtype SchemaDefine a = SchemaDefine (IO a)
 type Schema = SchemaDefine ()
 
 -- introduce a table
-table :: String -> EntityDefine a -> SchemaDefine EntityRef
-table = undefined
+table :: String -> (forall s. EntityDefine s a) -> SchemaDefine EntityRef
+table str _ = undefined
 
 -- silence the @-funused-do-bind@ or whatever
-table_ :: String -> EntityDefine a -> SchemaDefine ()
-table_ = undefined
+table_ :: String -> (forall s. EntityDefine s a) -> SchemaDefine ()
+table_ str _ = undefined
 
 --------------------------------------------------------------------------------
 -- entity definition
 --------------------------------------------------------------------------------
 
 -- the end result of running an 'EntityDefine' will be a single 'EntityDef'.
-newtype EntityDefine a = EntityDefine (IO a)
+newtype EntityDefine s a = EntityDefine (IO a)
     deriving (Functor, Applicative, Monad)
 
 data FieldSpec = FieldSpec
@@ -88,10 +89,10 @@ sql = FieldSpec
 
 data EntityRef
 
-data FieldRef
+data FieldRef s
 
 -- god, this is really awful, isn't it?
-derive :: forall (xs :: [* -> Constraint]). DeriveImpl xs => EntityDefine ()
+derive :: forall (xs :: [* -> Constraint]) s. DeriveImpl xs => EntityDefine s ()
 derive = undefined
   where
     strs = deriveImpl (Proxy @xs)
@@ -105,26 +106,29 @@ instance DeriveImpl '[] where
 instance (DeriveImpl xs, Typeable x) => DeriveImpl (x ': xs) where
     deriveImpl _ = show (typeRep (Proxy @x)) : deriveImpl (Proxy @xs)
 
-unique :: String -> [FieldRef] -> EntityDefine x
+unique :: String -> [FieldRef s] -> EntityDefine s x
 unique = undefined
 
-primary :: FieldRef -> EntityDefine x
+primary :: FieldRef s -> EntityDefine s x
 primary = compositePrimary . pure
 
-compositePrimary :: [FieldRef] -> EntityDefine x
+compositePrimary :: [FieldRef s] -> EntityDefine s x
 compositePrimary = undefined
+
+foreignKey :: EntityRef -> String -> [FieldRef s] -> EntityDefine s ()
+foreignKey = undefined
 
 -- digusting classes
 
 class WithFieldRef ret where
     fieldRef :: NameOrEntityRef x => String -> x -> ret
 
-instance WithFieldRef (EntityDefine FieldRef) where
-    fieldRef :: NameOrEntityRef x => String -> x -> EntityDefine FieldRef
+instance WithFieldRef (EntityDefine s (FieldRef s)) where
+    fieldRef :: NameOrEntityRef x => String -> x -> EntityDefine s (FieldRef s)
     fieldRef = undefined
 
-instance WithFieldRef (FieldSpec -> EntityDefine FieldRef) where
-    fieldRef :: NameOrEntityRef x => String -> x -> FieldSpec -> EntityDefine FieldRef
+instance WithFieldRef (FieldSpec -> EntityDefine s (FieldRef s)) where
+    fieldRef :: NameOrEntityRef x => String -> x -> FieldSpec -> EntityDefine s (FieldRef s)
     fieldRef = undefined
 
 instance {-# OVERLAPPABLE #-} (TypeError (Text "you did it wrong")) => WithFieldRef a where
@@ -134,10 +138,10 @@ instance {-# OVERLAPPABLE #-} (TypeError (Text "you did it wrong")) => WithField
 class Field ret where
     field :: NameOrEntityRef x => String -> x -> ret
 
-instance (() ~ a) => Field (EntityDefine a) where
+instance (() ~ a) => Field (EntityDefine s a) where
     field = undefined
 
-instance (() ~ a) => Field (FieldSpec -> EntityDefine a) where
+instance (() ~ a) => Field (FieldSpec -> EntityDefine s a) where
     field = undefined
 
 instance {-# OVERLAPPABLE #-} (TypeError (Text "you did it wrong, in a field")) => Field a where
@@ -147,23 +151,23 @@ instance {-# OVERLAPPABLE #-} (TypeError (Text "you did it wrong, in a field")) 
 -- nasty syntax hacks
 --------------------------------------------------------------------------------
 
-instance (() ~ a) => IsString (Name -> EntityDefine a) where
+instance (() ~ a) => IsString (Name -> EntityDefine s a) where
     fromString = fieldWithType
 
-fieldWithType :: String -> Name -> EntityDefine ()
+fieldWithType :: String -> Name -> EntityDefine s ()
 fieldWithType = undefined
 
-instance (() ~ a) => IsString (EntityRef -> EntityDefine a) where
+instance (() ~ a) => IsString (EntityRef -> EntityDefine s a) where
     fromString = fieldWithRef
 
-fieldWithRef :: String -> EntityRef -> EntityDefine ()
+fieldWithRef :: String -> EntityRef -> EntityDefine s ()
 fieldWithRef = undefined
 
 -- do i even have shame anymore
-instance (() ~ a) => IsString (EntityRef -> FieldSpec -> EntityDefine a) where
+instance (() ~ a) => IsString (EntityRef -> FieldSpec -> EntityDefine s a) where
     fromString = undefined
 
-instance (() ~ a) => IsString (Name -> FieldSpec -> EntityDefine a) where
+instance (() ~ a) => IsString (Name -> FieldSpec -> EntityDefine s a) where
     fromString = undefined
 
 -- gross hack so i can lighten the syntax load
